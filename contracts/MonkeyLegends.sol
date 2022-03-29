@@ -41,10 +41,9 @@ contract MonkeyLegends is MKLockRegistry, ERC721A {
 
     event AuthSignerSet(address indexed newSigner);
 
-    constructor(
-        address _erc20Token,
-        address _authSigner
-    ) ERC721A("Monkey Legends", "MKL") {
+    constructor(address _erc20Token, address _authSigner)
+        ERC721A("Monkey Legends", "MKL")
+    {
         peach = IERC20(_erc20Token);
         authSigner = _authSigner;
         baseURI = "https://meta.monkeykingdom.io/3/";
@@ -57,81 +56,40 @@ contract MonkeyLegends is MKLockRegistry, ERC721A {
         emit AuthSignerSet(_authSigner);
     }
 
-    // renaming
-    uint256 public renamePrice = 100 ether;
-    mapping(uint256 => string) public tokenName;
-
-    function setRenamePrice(uint256 _price) external onlyOwner {
-        renamePrice = _price;
-    }
-
-    function validName(string memory s) public pure returns (bool) {
-        bytes memory b = bytes(s);
-        require(b.length > 0 && b.length <= 32, "Invalid length");
-        unchecked {
-            uint256 i = 0;
-            while (i < b.length) {
-                if (b[i] >> 7 == 0) {
-                    if (b[i] < 0x20 || b[i] > 0x7e) return false;
-                    i += 1;
-                } else if (b[i] >> 5 == bytes1(uint8(0x6))) i += 2;
-                else if (b[i] >> 4 == bytes1(uint8(0xE))) i += 3;
-                else if (b[i] >> 3 == bytes1(uint8(0x1E))) i += 4;
-                else i += 1;
-            }
-        }
-        return true;
-    }
-
-    function rename(uint256 tokenId, string memory newName) external {
-        require(_msgSender() == ownerOf(tokenId), "Only rename your own NFTs");
-        require(
-            sha256(bytes(newName)) != sha256(bytes(tokenName[tokenId])),
-            "No name change necessary"
-        );
-        require(validName(newName), "Invalid name");
-        peach.transferFrom(_msgSender(), address(this), renamePrice);
-        tokenName[tokenId] = newName;
-    }
-
     // breeding
     uint256 public constant MAX_BREED = 4442;
-    uint256 public numMonkeysBreeded = 0;
+    uint256 public numBreeded = 0;
     mapping(string => uint256) public wukongsBreedCount;
     mapping(string => uint256) public baepesBreedCount;
     mapping(string => bool) public peachUsed;
 
-    function breed(
-        string calldata mkHash,
-        string calldata dbHash,
-        string calldata peachHash,
-        bytes calldata sig
-    ) external {
-        require(numMonkeysBreeded + 1 <= MAX_BREED, "Max no. breed reached");
-        bytes memory b = abi.encodePacked(
-            mkHash,
-            dbHash,
-            peachHash,
-            _msgSender()
-        );
+    function breed(string[] calldata hashes, bytes calldata sig) external {
+        uint256 numToMint = hashes.length / 3;
+        require(numBreeded + numToMint <= MAX_BREED, "MAX_BREED reached");
+        require(hashes.length % 3 == 1, "Invalid call");
+        bytes memory b = abi.encode(hashes, _msgSender());
         require(recoverSigner(keccak256(b), sig) == authSigner, "Invalid sig");
-
         unchecked {
-            require(wukongsBreedCount[mkHash] < 2, "Wukong breed twice");
-            wukongsBreedCount[mkHash]++;
-            require(baepesBreedCount[dbHash] < 2, "Baepe breed twice");
-            baepesBreedCount[dbHash]++;
-            require(!peachUsed[peachHash], "Peach has been used");
-            peachUsed[peachHash] = true;
+            for (uint256 n = 0; n < 3 * numToMint; ) {
+                string memory mkHash = hashes[n++];
+                string memory dbHash = hashes[n++];
+                string memory peachHash = hashes[n++];
+                require(
+                    wukongsBreedCount[mkHash]++ < 2 &&
+                        baepesBreedCount[dbHash]++ < 2 &&
+                        !peachUsed[peachHash],
+                    "Check breeding quota"
+                );
+                peachUsed[peachHash] = true;
+            }
         }
-
-        super._safeMint(_msgSender(), 1);
-        numMonkeysBreeded++;
+        super._safeMint(_msgSender(), numToMint);
+        numBreeded += numToMint;
     }
 
     // whitelist
     uint256 public constant MAX_WHITELIST_MINT = 4000;
-    uint256 public numWhitelistMint;
+    uint256 public numMinted;
     mapping(uint256 => mapping(address => bool)) public whitelistClaimed;
     uint256 public currentWhitelistTier = 1;
 
@@ -140,13 +98,10 @@ contract MonkeyLegends is MKLockRegistry, ERC721A {
         currentWhitelistTier = tier;
     }
 
-    function mintSignedWhitelist(uint256 tier, bytes calldata sig)
-        external
-        payable
-    {
+    function mint(uint256 tier, bytes calldata sig) external payable {
         unchecked {
             require(
-                numWhitelistMint + 1 <= MAX_WHITELIST_MINT,
+                numMinted + 1 <= MAX_WHITELIST_MINT,
                 "Whitelist mint finished"
             );
             require(tier == currentWhitelistTier, "Invalid tier");
@@ -163,12 +118,14 @@ contract MonkeyLegends is MKLockRegistry, ERC721A {
             require(msg.value >= mintPrice, "Insufficient ETH");
         }
         super._safeMint(_msgSender(), 1);
-        numWhitelistMint++;
+        numMinted++;
     }
 
     // claim
     IERC20 public peach;
     uint256 public claimPrice = 0;
+    uint256 public MAX_CLAIMABLE = 1558;
+    uint256 public numClaimed = 0;
 
     function setClaimPrice(uint256 _claimPrice) external onlyOwner {
         claimPrice = _claimPrice;
@@ -176,9 +133,10 @@ contract MonkeyLegends is MKLockRegistry, ERC721A {
 
     function claim(uint256 n) external {
         require(claimPrice > 0, "Claiming not open");
-        require(_currentIndex + n < MAX_SUPPLY - MAX_BREED, "All claim quota gone.");
+        require(numClaimed + n <= MAX_CLAIMABLE, "All claim quota gone.");
         peach.transferFrom(_msgSender(), address(this), claimPrice * n);
         super._safeMint(_msgSender(), n);
+        numClaimed += n;
     }
 
     // withdraw

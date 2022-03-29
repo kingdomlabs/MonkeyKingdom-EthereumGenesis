@@ -1,16 +1,19 @@
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import "@nomiclabs/hardhat-waffle";
 import { expect } from "chai";
+import "dotenv/config";
 import { deployContract } from "ethereum-waffle";
 import { parseEther } from "ethers/lib/utils";
 import { ethers, waffle } from "hardhat";
+import _ from "lodash";
 import DummyToken_ATF from "../artifacts/contracts/DummyERC20.sol/DummyToken.json";
 import Monkey_ATF from "../artifacts/contracts/MonkeyLegends.sol/MonkeyLegends.json";
 import { DummyToken, MonkeyLegends } from "../typechain";
 import whitelist from "./whitelist.json";
-import "dotenv/config";
 
 const { loadFixture } = waffle;
+
+console.clear();
 
 const signerAddr: string = process.env.AUTH_SIGNER_PUBKEY as string;
 const signerPriKey: string = process.env.AUTH_SIGNER_PRIKEY as string;
@@ -18,12 +21,13 @@ const ethersSigner = new ethers.utils.SigningKey(signerPriKey);
 let acc: SignerWithAddress[];
 
 const genBreedSig = (data: string[], address: string) => {
-  const msg = ethers.utils.solidityKeccak256(
+  const msg = ethers.utils.defaultAbiCoder.encode(
     ["string[]", "address"],
     [data, address]
   );
 
-  return ethers.utils.joinSignature(ethersSigner.signDigest(msg));
+  const digest = ethers.utils.keccak256(msg);
+  return ethers.utils.joinSignature(ethersSigner.signDigest(digest));
 };
 const genWhitelistSig = (tier: number, address: string) => {
   const msg = ethers.utils.solidityKeccak256(
@@ -75,62 +79,151 @@ describe("MonkeyLegends", () => {
   });
 
   describe(`breeding`, () => {
-    it("breed", async () => {
+    it("Abi.encodePacked bug fixed: sig can only be used once", async () => {
       const { monkey, numReserve } = await loadFixture(fixture);
-      const d1 = ["abc", "def", "ghi"];
+      const d1 = [
+        "C8swziBdTt14qMdtV5BnS5FaGwhzdomAMTh1YnN3UdtX",
+        "BVHw67JRTPULHjZEEGMLSiY5PqUjbUXrvRqxHb12nX94",
+        "2ef8DNYnDDUUMWYBK8vNcbBQSUJ4sM5zszt6ynV4apAx",
+        "5bRhH5ji2tWMQyUXjqxqtnTTV9g5ZTADmkuR9uwGJ8BHAjf2hHDnMsFm1U3LKbL9WHJ4BptfZuvvEXU9BQ5cULjr",
+      ];
       const sig1 = genBreedSig(d1, whitelist[0]);
-      await monkey.breed(d1[0], d1[1], d1[2], sig1);
+      await monkey.breed(d1, sig1);
       expect(await monkey.balanceOf(acc[0].address)).to.equal(numReserve + 1);
+
+      const d2 = [
+        "C8swziBdTt14qMdtV5BnS5FaGwhzdomAMTh1YnN3Udt",
+        "XBVHw67JRTPULHjZEEGMLSiY5PqUjbUXrvRqxHb12nX942",
+        "ef8DNYnDDUUMWYBK8vNcbBQSUJ4sM5zszt6ynV4apAx",
+        "5bRhH5ji2tWMQyUXjqxqtnTTV9g5ZTADmkuR9uwGJ8BHAjf2hHDnMsFm1U3LKbL9WHJ4BptfZuvvEXU9BQ5cULjr",
+      ];
+      await expect(monkey.breed(d2, sig1)).to.be.revertedWith("Invalid sig");
+    });
+
+    it("breed with incorrect number of hashes fails", async () => {
+      const { monkey } = await loadFixture(fixture);
+      {
+        const d1 = [
+          "C8swziBdTt14qMdtV5BnS5FaGwhzdomAMTh1YnN3Udt",
+          "XBVHw67JRTPULHjZEEGMLSiY5PqUjbUXrvRqxHb12nX942",
+          // "ef8DNYnDDUUMWYBK8vNcbBQSUJ4sM5zszt6ynV4apAx",
+          "5bRhH5ji2tWMQyUXjqxqtnTTV9g5ZTADmkuR9uwGJ8BHAjf2hHDnMsFm1U3LKbL9WHJ4BptfZuvvEXU9BQ5cULjr",
+        ];
+        const sig1 = genBreedSig(d1, whitelist[0]);
+        await expect(monkey.breed(d1, sig1)).to.be.revertedWith("Invalid call");
+      }
+
+      {
+        const d2: string[] = [
+          "5bRhH5ji2tWMQyUXjqxqtnTTV9g5ZTADmkuR9uwGJ8BHAjf2hHDnMsFm1U3LKbL9WHJ4BptfZuvvEXU9BQ5cULjr",
+        ];
+        const sig2 = genBreedSig(d2, whitelist[0]);
+        await expect(monkey.breed(d2, sig2)).to.be.reverted;
+      }
+
+      {
+        const d2: string[] = [];
+        const sig2 = genBreedSig(d2, whitelist[0]);
+        await expect(monkey.breed(d2, sig2)).to.be.revertedWith(
+          "Invalid call"
+        );
+      }
+    });
+
+    it("breed 100x", async () => {
+      const { monkey } = await loadFixture(fixture);
+      const d1 = [];
+      const oldBal = await monkey.balanceOf(acc[0].address);
+      for (let i = 0; i < 3 * 100; i++) {
+        d1.push(
+          `XBVHw67JRTPULHjZEEGMLSiY5PqUjbUXrvRqxHb12nX` +
+            _.padStart(i.toString(16), 3, "0")
+        );
+      }
+      d1.push(
+        "5bRhH5ji2tWMQyUXjqxqtnTTV9g5ZTADmkuR9uwGJ8BHAjf2hHDnMsFm1U3LKbL9WHJ4BptfZuvvEXU9BQ5cULjr"
+      );
+      const sig1 = genBreedSig(d1, whitelist[0]);
+      await monkey.breed(d1, sig1);
+      expect(await monkey.balanceOf(acc[0].address)).to.equal(oldBal.add(100));
     });
 
     it("count towards total supply", async () => {
       const { monkey, numReserve } = await loadFixture(fixture);
-      const d1 = ["abc", "def", "ghi"];
+      const d1 = [
+        "C8swziBdTt14qMdtV5BnS5FaGwhzdomAMTh1YnN3Udt",
+        "XBVHw67JRTPULHjZEEGMLSiY5PqUjbUXrvRqxHb12nX942",
+        "ef8DNYnDDUUMWYBK8vNcbBQSUJ4sM5zszt6ynV4apAx",
+        "5bRhH5ji2tWMQyUXjqxqtnTTV9g5ZTADmkuR9uwGJ8BHAjf2hHDnMsFm1U3LKbL9WHJ4BptfZuvvEXU9BQ5cULjr",
+      ];
       const sig1 = genBreedSig(d1, whitelist[0]);
-      await monkey.breed(d1[0], d1[1], d1[2], sig1);
+      await monkey.breed(d1, sig1);
       expect(await monkey.totalSupply()).to.equal(numReserve + 1);
     });
 
-    it("invalid sig breed fails", async () => {
+    it("Sig valid only for intended wallet", async () => {
       const { monkey } = await loadFixture(fixture);
-      const d1 = ["abc", "def", "ghi"];
+      const d1 = [
+        "C8swziBdTt14qMdtV5BnS5FaGwhzdomAMTh1YnN3Udt",
+        "XBVHw67JRTPULHjZEEGMLSiY5PqUjbUXrvRqxHb12nX942",
+        "ef8DNYnDDUUMWYBK8vNcbBQSUJ4sM5zszt6ynV4apAx",
+        "5bRhH5ji2tWMQyUXjqxqtnTTV9g5ZTADmkuR9uwGJ8BHAjf2hHDnMsFm1U3LKbL9WHJ4BptfZuvvEXU9BQ5cULjr",
+      ];
       const sig1 = genBreedSig(d1, whitelist[1]);
-      await expect(monkey.breed(d1[0], d1[1], d1[2], sig1)).to.be.revertedWith(
-        "Invalid sig"
-      );
+      await expect(monkey.breed(d1, sig1)).to.be.revertedWith("Invalid sig");
     });
 
     it("can't double-submit breeding request", async () => {
       const { monkey, numReserve } = await loadFixture(fixture);
-      const d1 = ["abc", "def", "ghi"];
+      const d1 = [
+        "C8swziBdTt14qMdtV5BnS5FaGwhzdomAMTh1YnN3Udt",
+        "XBVHw67JRTPULHjZEEGMLSiY5PqUjbUXrvRqxHb12nX942",
+        "ef8DNYnDDUUMWYBK8vNcbBQSUJ4sM5zszt6ynV4apAx",
+        "5bRhH5ji2tWMQyUXjqxqtnTTV9g5ZTADmkuR9uwGJ8BHAjf2hHDnMsFm1U3LKbL9WHJ4BptfZuvvEXU9BQ5cULjr",
+      ];
       const sig1 = genBreedSig(d1, whitelist[0]);
 
       expect(await monkey.balanceOf(acc[0].address)).to.equal(numReserve);
-      await monkey.breed(d1[0], d1[1], d1[2], sig1);
+      await monkey.breed(d1, sig1);
       expect(await monkey.balanceOf(acc[0].address)).to.equal(numReserve + 1);
-      await expect(monkey.breed(d1[0], d1[1], d1[2], sig1)).to.be.revertedWith(
-        "Peach has been used"
+      await expect(monkey.breed(d1, sig1)).to.be.revertedWith(
+        "Check breeding quota"
       );
     });
 
     it("breeding restricted to twice per monkey", async () => {
       const { monkey, numReserve } = await loadFixture(fixture);
       {
-        const d1 = ["abc", "def", "ghi"];
+        const d1 = [
+          "C8swziBdTt14qMdtV5BnS5FaGwhzdomAMTh1YnN3Udt",
+          "XBVHw67JRTPULHjZEEGMLSiY5PqUjbUXrvRqxHb12nX942",
+          "ef8DNYnDDUUMWYBK8vNcbBQSUJ4sM5zszt6ynV4apAx",
+          "5bRhH5ji2tWMQyUXjqxqtnTTV9g5ZTADmkuR9uwGJ8BHAjf2hHDnMsFm1U3LKbL9WHJ4BptfZuvvEXU9BQ5cULjr",
+        ];
         const sig1 = genBreedSig(d1, whitelist[0]);
-        await monkey.breed(d1[0], d1[1], d1[2], sig1);
+        await monkey.breed(d1, sig1);
 
-        const d2 = ["abc", "def", "ghij"];
+        const d2 = [
+          "C8swziBdTt14qMdtV5BnS5FaGwhzdomAMTh1YnN3Udt",
+          "XBVHw67JRTPULHjZEEGMLSiY5PqUjbUXrvRqxHb12nX942",
+          "ef8DNYnDDUUMWYBK8vNcbBQSUJ4sM5zszt6ynV4apAy",
+          "5bRhH5ji2tWMQyUXjqxqtnTTV9g5ZTADmkuR9uwGJ8BHAjf2hHDnMsFm1U3LKbL9WHJ4BptfZuvvEXU9BQ5cULjr",
+        ];
         const sig2 = genBreedSig(d2, whitelist[0]);
-        await monkey.breed(d2[0], d2[1], d2[2], sig2);
+        await monkey.breed(d2, sig2);
 
         expect(await monkey.balanceOf(acc[0].address)).to.equal(numReserve + 2);
 
-        const d3 = ["abc", "efg", "ghijj"];
+        const d3 = [
+          "C8swziBdTt14qMdtV5BnS5FaGwhzdomAMTh1YnN3Udt",
+          "XBVHw67JRTPULHjZEEGMLSiY5PqUjbUXrvRqxHb12nX942",
+          "ef8DNYnDDUUMWYBK8vNcbBQSUJ4sM5zszt6ynV4apAz",
+          "5bRhH5ji2tWMQyUXjqxqtnTTV9g5ZTADmkuR9uwGJ8BHAjf2hHDnMsFm1U3LKbL9WHJ4BptfZuvvEXU9BQ5cULjr",
+        ];
         const sig3 = genBreedSig(d3, whitelist[0]);
-        await expect(
-          monkey.breed(d3[0], d3[1], d3[2], sig3)
-        ).to.be.revertedWith("Wukong breed twice");
+        await expect(monkey.breed(d3, sig3)).to.be.revertedWith(
+          "Check breeding quota"
+        );
 
         expect(await monkey.balanceOf(acc[0].address)).to.equal(numReserve + 2);
       }
@@ -139,17 +232,27 @@ describe("MonkeyLegends", () => {
     it("breeding restricted to once per peach", async () => {
       const { monkey, numReserve } = await loadFixture(fixture);
       {
-        const d1 = ["abc", "def", "ghi"];
+        const d1 = [
+          "C8swziBdTt14qMdtV5BnS5FaGwhzdomAMTh1YnN3Udt",
+          "XBVHw67JRTPULHjZEEGMLSiY5PqUjbUXrvRqxHb12nX942",
+          "ef8DNYnDDUUMWYBK8vNcbBQSUJ4sM5zszt6ynV4apAx",
+          "5bRhH5ji2tWMQyUXjqxqtnTTV9g5ZTADmkuR9uwGJ8BHAjf2hHDnMsFm1U3LKbL9WHJ4BptfZuvvEXU9BQ5cULjr",
+        ];
         const sig1 = genBreedSig(d1, whitelist[0]);
-        await monkey.breed(d1[0], d1[1], d1[2], sig1);
+        await monkey.breed(d1, sig1);
 
         expect(await monkey.balanceOf(acc[0].address)).to.equal(numReserve + 1);
 
-        const d3 = ["abc", "efg", "ghi"];
+        const d3 = [
+          "C8swziBdTt14qMdtV5BnS5FaGwhzdomAMTh1YnN3Udt",
+          "XBVHw67JRTPULHjZEEGMLSiY5PqUjbUXrvRqxHb12nX942",
+          "ef8DNYnDDUUMWYBK8vNcbBQSUJ4sM5zszt6ynV4apAx",
+          "5bRhH5ji2tWMQyUXjqxqtnTTV9g5ZTADmkuR9uwGJ8BHAjf2hHDnMsFm1U3LKbL9WHJ4BptfZuvvEXU9BQ5cULjr",
+        ];
         const sig3 = genBreedSig(d3, whitelist[0]);
-        await expect(
-          monkey.breed(d3[0], d3[1], d3[2], sig3)
-        ).to.be.revertedWith("Peach has been used");
+        await expect(monkey.breed(d3, sig3)).to.be.revertedWith(
+          "Check breeding quota"
+        );
 
         expect(await monkey.balanceOf(acc[0].address)).to.equal(numReserve + 1);
       }
@@ -162,16 +265,15 @@ describe("MonkeyLegends", () => {
       for (; i < 5; i++) {
         const d1 = ["mk" + i, "db" + i, "peach" + i];
         const sig = genBreedSig(d1, whitelist[0]);
-        promises.push(monkey.breed(d1[0], d1[1], d1[2], sig));
+        promises.push(monkey.breed(d1, sig));
       }
       await Promise.all(promises);
-
       {
         const d1 = ["mk" + i, "db" + i, "peach" + i];
         const sig1 = genBreedSig(d1, whitelist[0]);
-        await expect(
-          monkey.breed(d1[0], d1[1], d1[2], sig1)
-        ).to.be.revertedWith("Max no. breed reached");
+        await expect(monkey.breed(d1, sig1)).to.be.revertedWith(
+          "Max no. breed reached"
+        );
       }
     }).timeout(100000);
   });
@@ -183,12 +285,12 @@ describe("MonkeyLegends", () => {
       const tier = 1;
       const sig = genWhitelistSig(tier, acc[0].address);
       await expect(
-        monkey.mintSignedWhitelist(tier, sig, { value: price.sub("1") })
+        monkey.mint(tier, sig, { value: price.sub("1") })
       ).to.be.revertedWith("Insufficient ETH");
       expect(await monkey.balanceOf(acc[0].address)).to.equal(numReserve);
 
       await expect(
-        await monkey.mintSignedWhitelist(tier, sig, { value: price })
+        await monkey.mint(tier, sig, { value: price })
       ).to.changeEtherBalances([acc[0], monkey], [price.mul(-1), price]);
       expect(await monkey.balanceOf(acc[0].address)).to.equal(numReserve + 1);
     });
@@ -197,38 +299,36 @@ describe("MonkeyLegends", () => {
       const tier = 1;
       const sig = genWhitelistSig(tier, acc[0].address);
       await expect(
-        monkey.connect(acc[1]).mintSignedWhitelist(tier, sig, { value: price })
+        monkey.connect(acc[1]).mint(tier, sig, { value: price })
       ).to.revertedWith("Invalid sig");
 
-      await monkey.mintSignedWhitelist(tier, sig, { value: price });
+      await monkey.mint(tier, sig, { value: price });
       expect(await monkey.balanceOf(acc[0].address)).to.equal(numReserve + 1);
     });
     it("sig valid only to intended tier", async () => {
       const { monkey, price, numReserve } = await loadFixture(fixture);
       const tier = 2;
       const sig = genWhitelistSig(tier, acc[0].address);
-      await expect(
-        monkey.mintSignedWhitelist(tier, sig, { value: price })
-      ).to.revertedWith("Invalid tier");
+      await expect(monkey.mint(tier, sig, { value: price })).to.revertedWith(
+        "Invalid tier"
+      );
 
       await monkey.setCurrentWhitelistTier(tier);
-      await monkey.mintSignedWhitelist(tier, sig, { value: price });
+      await monkey.mint(tier, sig, { value: price });
       expect(await monkey.balanceOf(acc[0].address)).to.equal(numReserve + 1);
 
       await monkey.setCurrentWhitelistTier(tier + 1);
-      await expect(monkey.mintSignedWhitelist(tier, sig)).to.revertedWith(
-        "Invalid tier"
-      );
+      await expect(monkey.mint(tier, sig)).to.revertedWith("Invalid tier");
     });
     it("whitelisted wallet can mint only once during intended tier", async () => {
       const { monkey, price } = await loadFixture(fixture);
       const tier = 1;
       const sig = genWhitelistSig(tier, acc[0].address);
 
-      await monkey.mintSignedWhitelist(tier, sig, { value: price });
-      await expect(
-        monkey.mintSignedWhitelist(tier, sig, { value: price })
-      ).to.revertedWith("Whitelist quota used");
+      await monkey.mint(tier, sig, { value: price });
+      await expect(monkey.mint(tier, sig, { value: price })).to.revertedWith(
+        "Whitelist quota used"
+      );
     });
 
     it("wallet can mint again when tier changes", async () => {
@@ -236,15 +336,15 @@ describe("MonkeyLegends", () => {
       let tier = 1;
 
       const sig = genWhitelistSig(tier, acc[0].address);
-      await monkey.mintSignedWhitelist(tier, sig, { value: price });
-      await expect(
-        monkey.mintSignedWhitelist(tier, sig, { value: price })
-      ).to.revertedWith("Whitelist quota used");
+      await monkey.mint(tier, sig, { value: price });
+      await expect(monkey.mint(tier, sig, { value: price })).to.revertedWith(
+        "Whitelist quota used"
+      );
 
       tier++;
       await monkey.setCurrentWhitelistTier(tier);
       const sig2 = genWhitelistSig(tier, acc[0].address);
-      await monkey.mintSignedWhitelist(tier, sig2, { value: price });
+      await monkey.mint(tier, sig2, { value: price });
       expect(await monkey.balanceOf(acc[0].address)).to.equal(numReserve + 2);
     });
 
@@ -253,8 +353,8 @@ describe("MonkeyLegends", () => {
       const tier = 1;
       const sig = genWhitelistSig(tier, acc[0].address);
 
-      await monkey.mintSignedWhitelist(tier, sig, { value: price });
-      expect(await monkey.numWhitelistMint()).to.equal(1);
+      await monkey.mint(tier, sig, { value: price });
+      expect(await monkey.numMinted()).to.equal(1);
     });
     it("only owner can advance tier", async () => {
       const { monkey } = await loadFixture(fixture);
@@ -277,21 +377,17 @@ describe("MonkeyLegends", () => {
       const promises = [];
       for (let i = 0; i < 5; i++) {
         const sig = genWhitelistSig(tier, acc[i].address);
-        promises.push(
-          monkey
-            .connect(acc[i])
-            .mintSignedWhitelist(tier, sig, { value: price })
-        );
+        promises.push(monkey.connect(acc[i]).mint(tier, sig, { value: price }));
       }
       await Promise.all(promises);
 
       const sig = genWhitelistSig(tier, acc[5].address);
 
       await expect(
-        monkey.connect(acc[5]).mintSignedWhitelist(tier, sig, { value: price })
+        monkey.connect(acc[5]).mint(tier, sig, { value: price })
       ).to.be.revertedWith("Whitelist mint finished");
 
-      expect(await monkey.numWhitelistMint()).to.equal(5);
+      expect(await monkey.numMinted()).to.equal(5);
     });
   });
 
@@ -378,7 +474,7 @@ describe("MonkeyLegends", () => {
 
       let tier = 1;
       const sig = genWhitelistSig(tier, acc[0].address);
-      await monkey.mintSignedWhitelist(tier, sig, { value: price });
+      await monkey.mint(tier, sig, { value: price });
 
       await expect(monkey.connect(acc[2]).withdrawAll()).to.be.revertedWith(
         "Ownable: caller is not the owner"
@@ -394,7 +490,7 @@ describe("MonkeyLegends", () => {
 
       let tier = 1;
       const sig = genWhitelistSig(tier, acc[0].address);
-      await monkey.mintSignedWhitelist(tier, sig, { value: price });
+      await monkey.mint(tier, sig, { value: price });
 
       expect(await monkey.tokenURI(0)).to.equal(
         "https://meta.monkeykingdom.io/3/0"
@@ -416,82 +512,82 @@ describe("MonkeyLegends", () => {
     });
   });
 
-  describe("rename gen3", async () => {
-    it("allow 0x20-0x0x7e", async () => {
-      const { monkey, price } = await loadFixture(fixture);
-      const strings = [
-        " !\"#$%&'()*+`-./0123456789:;<=>?",
-        "@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_",
-        "`abcdefghijklmnopqrstuvwxyz{|}~",
-      ];
-      for (let i = 0; i < strings.length; i++) {
-        await monkey.rename(0, strings[i]);
-        expect(await monkey.tokenName(0)).to.equal(strings[i]);
-      }
-    });
+  // describe.skip("rename gen3", async () => {
+  //   it("allow 0x20-0x0x7e", async () => {
+  //     const { monkey, price } = await loadFixture(fixture);
+  //     const strings = [
+  //       " !\"#$%&'()*+`-./0123456789:;<=>?",
+  //       "@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_",
+  //       "`abcdefghijklmnopqrstuvwxyz{|}~",
+  //     ];
+  //     for (let i = 0; i < strings.length; i++) {
+  //       await monkey.rename(0, strings[i]);
+  //       expect(await monkey.tokenName(0)).to.equal(strings[i]);
+  //     }
+  //   });
 
-    it("allow asian chars in name", async () => {
-      const { monkey, price } = await loadFixture(fixture);
-      // thai, vietnamese, chinese, tamil, jap
-      const strings = [
-        "ประเทศไทย",
-        "Việt Nam",
-        "中文",
-        "தமிழ்",
-        "ウィキペディア",
-      ];
-      for (let i = 0; i < strings.length; i++) {
-        await monkey.rename(0, strings[i]);
-        expect(await monkey.tokenName(0)).to.equal(strings[i]);
-      }
-    });
+  //   it("allow asian chars in name", async () => {
+  //     const { monkey, price } = await loadFixture(fixture);
+  //     // thai, vietnamese, chinese, tamil, jap
+  //     const strings = [
+  //       "ประเทศไทย",
+  //       "Việt Nam",
+  //       "中文",
+  //       "தமிழ்",
+  //       "ウィキペディア",
+  //     ];
+  //     for (let i = 0; i < strings.length; i++) {
+  //       await monkey.rename(0, strings[i]);
+  //       expect(await monkey.tokenName(0)).to.equal(strings[i]);
+  //     }
+  //   });
 
-    it("can only rename your own NFT", async () => {
-      const { monkey, price } = await loadFixture(fixture);
-      await expect(monkey.connect(acc[1]).rename(0, "123")).to.be.revertedWith(
-        "hi"
-      );
-    });
+  //   it("can only rename your own NFT", async () => {
+  //     const { monkey, price } = await loadFixture(fixture);
+  //     await expect(monkey.connect(acc[1]).rename(0, "123")).to.be.revertedWith(
+  //       "hi"
+  //     );
+  //   });
 
-    it("insufficient peach allowance reverts", async () => {
-      const { monkey, price, peach, numReserve } = await loadFixture(fixture);
-      const tokenId = 0;
-      await peach.transfer(acc[1].address, await monkey.renamePrice());
-      await monkey.transferFrom(acc[0].address, acc[1].address, tokenId);
-      expect(await monkey.ownerOf(tokenId)).to.equal(acc[1].address);
-      await expect(
-        monkey.connect(acc[1]).rename(tokenId, "123")
-      ).to.be.revertedWith("ERC20: insufficient allowance");
-    });
+  //   it("insufficient peach allowance reverts", async () => {
+  //     const { monkey, price, peach, numReserve } = await loadFixture(fixture);
+  //     const tokenId = 0;
+  //     await peach.transfer(acc[1].address, await monkey.renamePrice());
+  //     await monkey.transferFrom(acc[0].address, acc[1].address, tokenId);
+  //     expect(await monkey.ownerOf(tokenId)).to.equal(acc[1].address);
+  //     await expect(
+  //       monkey.connect(acc[1]).rename(tokenId, "123")
+  //     ).to.be.revertedWith("ERC20: insufficient allowance");
+  //   });
 
-    it("insufficient peach balance reverts", async () => {
-      const { monkey, price, peach, numReserve } = await loadFixture(fixture);
-      const tokenId = 0;
-      const renamePrice = await monkey.renamePrice();
-      await peach.transfer(acc[1].address, renamePrice.sub(1));
-      await monkey.transferFrom(acc[0].address, acc[1].address, tokenId);
-      await peach
-        .connect(acc[1])
-        .increaseAllowance(monkey.address, ethers.constants.MaxUint256);
-      await expect(
-        monkey.connect(acc[1]).rename(tokenId, "123")
-      ).to.be.revertedWith("ERC20: transfer amount exceeds balance");
-    });
+  //   it("insufficient peach balance reverts", async () => {
+  //     const { monkey, price, peach, numReserve } = await loadFixture(fixture);
+  //     const tokenId = 0;
+  //     const renamePrice = await monkey.renamePrice();
+  //     await peach.transfer(acc[1].address, renamePrice.sub(1));
+  //     await monkey.transferFrom(acc[0].address, acc[1].address, tokenId);
+  //     await peach
+  //       .connect(acc[1])
+  //       .increaseAllowance(monkey.address, ethers.constants.MaxUint256);
+  //     await expect(
+  //       monkey.connect(acc[1]).rename(tokenId, "123")
+  //     ).to.be.revertedWith("ERC20: transfer amount exceeds balance");
+  //   });
 
-    it("charges rename fee", async () => {
-      const { monkey, price, peach } = await loadFixture(fixture);
-      let tier = 1;
-      const renamePrice = await monkey.renamePrice();
-      const sig = genWhitelistSig(tier, acc[0].address);
-      await monkey.mintSignedWhitelist(tier, sig, { value: price });
-      await expect(() => monkey.rename(0, "123")).to.changeTokenBalances(
-        peach,
-        [acc[0], monkey],
-        [renamePrice.mul(-1), renamePrice]
-      );
-    });
+  //   it("charges rename fee", async () => {
+  //     const { monkey, price, peach } = await loadFixture(fixture);
+  //     let tier = 1;
+  //     const renamePrice = await monkey.renamePrice();
+  //     const sig = genWhitelistSig(tier, acc[0].address);
+  //     await monkey.mintSignedWhitelist(tier, sig, { value: price });
+  //     await expect(() => monkey.rename(0, "123")).to.changeTokenBalances(
+  //       peach,
+  //       [acc[0], monkey],
+  //       [renamePrice.mul(-1), renamePrice]
+  //     );
+  //   });
 
-  });
+  // });
 
   describe("locking", () => {
     it("only owner can add new lockers, lock limits transfer, unlock works", async () => {
@@ -556,7 +652,7 @@ describe("MonkeyLegends", () => {
 
       let tier = 1;
       const sig = genWhitelistSig(tier, acc[0].address);
-      await monkey.mintSignedWhitelist(tier, sig, { value: price });
+      await monkey.mint(tier, sig, { value: price });
 
       const tokenId = 0;
       await Promise.all(
