@@ -149,6 +149,11 @@ contract MonkeyLegends is MKLockRegistry, ERC721A {
         );
     }
 
+    function recoverERC20(address tokenAddress) external onlyOwner {
+        IERC20 token = IERC20(tokenAddress);
+        token.transfer(owner(), token.balanceOf(address(this)));
+    }
+
     // locking
     function _beforeTokenTransfers(
         address from,

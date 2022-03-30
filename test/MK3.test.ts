@@ -41,7 +41,6 @@ const genWhitelistSig = (tier: number, address: string) => {
 describe("MonkeyLegends", () => {
   async function fixture() {
     const acc = await ethers.getSigners();
-    const claimPrice = parseEther("1");
     const peach = <DummyToken>(
       await deployContract(acc[0], DummyToken_ATF, [
         ethers.constants.MaxUint256,
@@ -484,6 +483,49 @@ describe("MonkeyLegends", () => {
         [price.mul(-1), price]
       );
     });
+
+    it('Recover ERC20 works', async () => {
+      const { monkey, peach, price } = await loadFixture(fixture);
+
+      await peach.transfer(monkey.address, price);
+
+      await expect(monkey.connect(acc[2]).recoverERC20(peach.address)).to.be.revertedWith(
+        "Ownable: caller is not the owner"
+      );
+      await expect(() => monkey.recoverERC20(peach.address)).to.changeTokenBalances(
+        peach,
+        [monkey, acc[0]],
+        [price.mul(-1), price]
+      );
+    })
+
+    it('mintPrice onlyOwner settable', async () => {
+      const { monkey, price } = await loadFixture(fixture);
+      const newPrice = price.sub(10);
+      await monkey.setMintPrice(newPrice);
+      expect(
+        await monkey.mintPrice()
+      ).to.equal(newPrice);
+
+      await expect(
+        monkey.connect(acc[1]).setMintPrice(newPrice)
+      ).to.be.revertedWith('Ownable: caller is not the owner')
+
+    })
+
+
+    it('authSigner onlyOwner settable', async () => {
+      const { monkey } = await loadFixture(fixture);
+      await monkey.setAuthSigner(acc[2].address);
+      expect(
+        await monkey.authSigner()
+      ).to.equal(acc[2].address);
+
+      await expect(
+        monkey.connect(acc[2]).setAuthSigner(acc[3].address)
+      ).to.be.revertedWith('Ownable: caller is not the owner')
+
+    })
 
     it("baseURI default", async () => {
       const { monkey, price } = await loadFixture(fixture);
