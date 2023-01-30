@@ -1,4 +1,4 @@
-# Monkey Legends - Monkey Kingdom Generation 3 NFTs
+# Monkey Kingdom Genesis NFT on Ethereum
 
 ## Test
 
