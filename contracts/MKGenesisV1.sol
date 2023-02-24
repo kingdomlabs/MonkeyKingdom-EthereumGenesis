@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity 0.8.17;
+pragma solidity ^0.8.17;
 
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
-import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Burnable.sol";
-import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Pausable.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "./MKLockRegistry.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721EnumerableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721BurnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721PausableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "./MKLockRegistryUpgradeable.sol";
 
 /*
                        j╫╫╫╫╫╫ ]╫╫╫╫╫H                                          
@@ -31,28 +32,41 @@ import "./MKLockRegistry.sol";
                              ▀▀▀▀▀▀▀▀▀▀U                                      
 */
 
-contract MKGenesis is
-    ERC721,
-    ERC721Enumerable,
-    ERC721Burnable,
-    ERC721Pausable,
-    Ownable,
-    MKLockRegistry
+contract MKGenesisV1 is
+    Initializable,
+    ERC721Upgradeable,
+    ERC721EnumerableUpgradeable,
+    ERC721BurnableUpgradeable,
+    ERC721PausableUpgradeable,
+    OwnableUpgradeable,
+    MKLockRegistryUpgradeable
 {
     uint256 public MAX_SUPPLY;
     address public authSigner;
+    uint256 public test;
     event AuthSignerSet(address indexed newSigner);
 
-    constructor(
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(
         string memory tokenName,
         string memory tokenSymbol,
         uint256 maxSupply,
         address _authSigner,
         string memory __baseURI
-    ) ERC721(tokenName, tokenSymbol) {
+    ) public virtual reinitializer(1) {
+        __ERC721_init(tokenName, tokenSymbol);
+        __ERC721Enumerable_init();
+        __ERC721Burnable_init();
+        __ERC721Pausable_init();
+        __Ownable_init();
         authSigner = _authSigner;
         baseURI = __baseURI;
         MAX_SUPPLY = maxSupply;
+        test=1;
     }
 
     // set auth signer
@@ -66,7 +80,7 @@ contract MKGenesis is
         uint256[] calldata tokenIds,
         bytes calldata sig,
         string calldata solSig
-    ) external {
+    ) external virtual {
         bytes memory b = abi.encode(tokenIds, msg.sender, solSig);
         address recoveredSigner = recoverSigner(keccak256(b), sig);
         require(recoveredSigner == authSigner, "Invalid sig");
@@ -87,7 +101,15 @@ contract MKGenesis is
         address to,
         uint256 firstTokenId,
         uint256 batchSize
-    ) internal virtual override(ERC721Pausable, ERC721Enumerable, ERC721) {
+    )
+        internal
+        virtual
+        override(
+            ERC721Upgradeable,
+            ERC721EnumerableUpgradeable,
+            ERC721PausableUpgradeable
+        )
+    {
         require(isUnlocked(firstTokenId), "Token locked");
         super._beforeTokenTransfer(from, to, firstTokenId, batchSize);
     }
@@ -104,16 +126,26 @@ contract MKGenesis is
     }
 
     // IERC165
-    function supportsInterface(
-        bytes4 interfaceId
-    ) public view virtual override(ERC721, ERC721Enumerable) returns (bool) {
+    function supportsInterface(bytes4 interfaceId)
+        public
+        view
+        virtual
+        override(ERC721Upgradeable, ERC721EnumerableUpgradeable)
+        returns (bool)
+    {
         return super.supportsInterface(interfaceId);
     }
 
     // crypto
-    function splitSignature(
-        bytes memory sig
-    ) internal pure returns (uint8, bytes32, bytes32) {
+    function splitSignature(bytes memory sig)
+        internal
+        pure
+        returns (
+            uint8,
+            bytes32,
+            bytes32
+        )
+    {
         require(sig.length == 65, "invalid sig");
 
         bytes32 r;
@@ -129,10 +161,11 @@ contract MKGenesis is
         return (v, r, s);
     }
 
-    function recoverSigner(
-        bytes32 message,
-        bytes memory sig
-    ) internal pure returns (address) {
+    function recoverSigner(bytes32 message, bytes memory sig)
+        internal
+        pure
+        returns (address)
+    {
         uint8 v;
         bytes32 r;
         bytes32 s;

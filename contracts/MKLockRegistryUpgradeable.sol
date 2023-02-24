@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "./interfaces/IMKLockRegistry.sol";
 
-abstract contract MKLockRegistry is IMKLockRegistry, Ownable {
+abstract contract MKLockRegistryUpgradeable is
+    IMKLockRegistry,
+    OwnableUpgradeable
+{
     mapping(address => bool) public approvedContract;
     mapping(uint256 => address[]) public locks;
+    uint256[48] __gap;
 
     function isUnlocked(uint256 _id) public view returns (bool) {
         return locks[_id].length == 0;

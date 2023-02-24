@@ -1,53 +1,41 @@
 import "dotenv/config";
-import { ethers } from "hardhat";
+import { ethers, upgrades } from "hardhat";
 import { loadFixture } from '@nomicfoundation/hardhat-network-helpers';
-import { BigNumber } from "ethers";
 import { expect } from "chai";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
-// import { DummyToken, MonkeyKingdomGenesis } from "../typechain";
+import _ from 'lodash';
+import { genMigrateSig } from "../lib/all";
+import { MKGenesisV1, MKGenesisV2 } from "../typechain-types";
+
 
 console.clear();
 const baseURI = "https://meta.monkeykingdom.io/1/";
 
 const signerAddr: string = process.env.AUTH_SIGNER_PUBKEY as string;
-const signerPriKey: string = process.env.AUTH_SIGNER_PRIKEY as string;
-const ethersSigner = new ethers.utils.SigningKey(signerPriKey);
 let acc: SignerWithAddress[];
-
-const genMigrateSig = (tokenIds: number[], address: string, solSig: string) => {
-  const packed = ethers.utils.defaultAbiCoder.encode(
-    ["uint256[]", "address", "string"],
-    [tokenIds, address, solSig]
-  );
-
-  const msg = ethers.utils.keccak256(packed);
-  const sig0 = ethersSigner.signDigest(msg)
-  const sig1 = ethers.utils.joinSignature(sig0);
-  return sig1
-};
+const { BigNumber } = ethers;
 
 const solSig = '2fZTA6wXuqYsxe9mwSSDhAkbDd9nZyLrQzgnisDycMVM8jnLNVhb2XkF3D3JcMeyd4JDiB8LhEfpLir2wvzv4VG7';
 
 describe("MonkeyKingdomGenesis", () => {
   async function genesisFixture() {
-    const Genesis = await ethers.getContractFactory("MKGenesis");
-    return {
-      'genesis': await Genesis.deploy("MonkeyKingdom Wukong", "MKW", 2222, signerAddr, baseURI)
-    };
+    const Genesis = await ethers.getContractFactory("MKGenesisV1");
+    const genesis: MKGenesisV1 = await upgrades.deployProxy(Genesis, ["MonkeyKingdom Wukong", "MKW", 2222, signerAddr, baseURI]) as MKGenesisV1;
+    return { genesis };
   }
-  async function erc20Fixture(num_arg: number = 2222) {
+  async function erc20Fixture(num_arg = 2222) {
     const Erc20 = await ethers.getContractFactory("DummyToken");
     return {
       erc20: await Erc20.deploy(num_arg)
     }
   }
-  async function erc20Fixture2(num_arg: number = 2222) {
+  async function erc20Fixture2(num_arg = 2222) {
     const Erc20 = await ethers.getContractFactory("DummyToken");
     return {
       erc20: await Erc20.deploy(num_arg)
     }
   }
-  async function erc20Fixture3(num_arg: number = 2222) {
+  async function erc20Fixture3(num_arg = 2222) {
     const Erc20 = await ethers.getContractFactory("DummyToken");
     return {
       erc20: await Erc20.deploy(num_arg)
@@ -57,6 +45,34 @@ describe("MonkeyKingdomGenesis", () => {
   before(async () => {
     // const f = await loadFixtuer(fixture);
     acc = await ethers.getSigners();
+  });
+
+  describe('upgradeable', () => {
+    it('initialize works', async () => {
+      const { genesis } = await loadFixture(genesisFixture);
+      expect(await genesis.name()).to.equal("MonkeyKingdom Wukong");
+      expect(await genesis.symbol()).to.equal("MKW");
+      expect(await genesis.baseURI()).to.equal(baseURI);
+      expect(await genesis.authSigner()).to.equal(signerAddr);
+    });
+    it('new fn available at same addr', async () => {
+      const { genesis } = await loadFixture(genesisFixture);
+      const GenesisV2 = await ethers.getContractFactory("MKGenesisV2Test");
+      const genesisV2 = await upgrades.upgradeProxy(genesis.address, GenesisV2) as MKGenesisV2;
+      expect(genesis.address).to.equal(genesisV2.address);
+      expect(await genesisV2.v2Test()).to.equal('v2Test');
+    });
+    it('old fn body replaced at same addr', async () => {
+      const { genesis } = await loadFixture(genesisFixture);
+      const GenesisV2 = await ethers.getContractFactory("MKGenesisV2Test");
+      const genesisV2 = await upgrades.upgradeProxy(genesis.address, GenesisV2) as MKGenesisV2;
+      expect(genesis.address).to.equal(genesisV2.address);
+
+      const tokenIds = [2, 4];
+      const sig = genMigrateSig(tokenIds, acc[0].address, solSig);
+      await expect(genesisV2.migrate(tokenIds, sig, solSig)).to.revertedWith('Migration closed');
+    });
+
   });
 
   describe("migration", () => {
@@ -109,6 +125,14 @@ describe("MonkeyKingdomGenesis", () => {
 
       await genesis.migrate(tokenIds, sig, solSig);
       expect(await genesis.totalSupply()).to.equal(2);
+    });
+    it("bulk mint works", async () => {
+      const { genesis } = await loadFixture(genesisFixture);
+      const tokenIds = _.range(1, 51); // end is exclusive
+      const sig = genMigrateSig(tokenIds, acc[0].address, solSig);
+
+      await genesis.migrate(tokenIds, sig, solSig);
+      expect(await genesis.totalSupply()).to.equal(50);
     });
 
   });
