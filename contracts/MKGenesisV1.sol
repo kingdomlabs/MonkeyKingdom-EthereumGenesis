@@ -6,8 +6,8 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC721/ERC721Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721EnumerableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721BurnableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/token/ERC721/extensions/ERC721PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "./MKLockRegistryUpgradeable.sol";
 
 /*
@@ -36,14 +36,13 @@ contract MKGenesisV1 is
     Initializable,
     ERC721Upgradeable,
     ERC721EnumerableUpgradeable,
-    ERC721BurnableUpgradeable,
-    ERC721PausableUpgradeable,
+    PausableUpgradeable,
     OwnableUpgradeable,
+    ERC721BurnableUpgradeable,
     MKLockRegistryUpgradeable
 {
     uint256 public MAX_SUPPLY;
     address public authSigner;
-    uint256 public test;
     event AuthSignerSet(address indexed newSigner);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -60,13 +59,21 @@ contract MKGenesisV1 is
     ) public virtual reinitializer(1) {
         __ERC721_init(tokenName, tokenSymbol);
         __ERC721Enumerable_init();
-        __ERC721Burnable_init();
-        __ERC721Pausable_init();
+        __Pausable_init();
         __Ownable_init();
+        __ERC721Burnable_init();
         authSigner = _authSigner;
         baseURI = __baseURI;
         MAX_SUPPLY = maxSupply;
-        test=1;
+    }
+
+    // pausable
+    function pause() public onlyOwner {
+        _pause();
+    }
+
+    function unpause() public onlyOwner {
+        _unpause();
     }
 
     // set auth signer
@@ -85,7 +92,7 @@ contract MKGenesisV1 is
         address recoveredSigner = recoverSigner(keccak256(b), sig);
         require(recoveredSigner == authSigner, "Invalid sig");
         for (uint256 i = 0; i < tokenIds.length; i++) {
-            super._safeMint(msg.sender, tokenIds[i]);
+            _safeMint(msg.sender, tokenIds[i]);
         }
     }
 
@@ -99,19 +106,16 @@ contract MKGenesisV1 is
     function _beforeTokenTransfer(
         address from,
         address to,
-        uint256 firstTokenId,
+        uint256 tokenId,
         uint256 batchSize
     )
         internal
         virtual
-        override(
-            ERC721Upgradeable,
-            ERC721EnumerableUpgradeable,
-            ERC721PausableUpgradeable
-        )
+        override(ERC721Upgradeable, ERC721EnumerableUpgradeable)
+        whenNotPaused
     {
-        require(isUnlocked(firstTokenId), "Token locked");
-        super._beforeTokenTransfer(from, to, firstTokenId, batchSize);
+        require(isUnlocked(tokenId), "Token locked");
+        super._beforeTokenTransfer(from, to, tokenId, batchSize);
     }
 
     // metadata

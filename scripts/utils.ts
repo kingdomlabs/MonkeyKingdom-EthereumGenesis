@@ -1,5 +1,5 @@
 import { network, run } from 'hardhat';
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readdirSync, readFileSync } from "fs";
 import { execSync } from 'child_process';
 
 // readline
@@ -15,12 +15,29 @@ export const closeReadline = () => rl.close();
 export const getContractName = (name: string, ver: number) => `${name}V${ver}`;
 export async function verifyOnEtherscan(address: string) {
     if (network.name == 'localhost' || network.name == 'hardhat') {
-        console.log("Skip verify on localhost");
+        console.log("Verification skipped for local networks");
     } else {
         const ans = await question('Verify on etherscan? (y/n) ') as any as string;
         if (ans == 'y') {
-            await run("verify:verify", { address });
+            let success = false;
+            while (!success) {
+                try {
+                    await run("verify:verify", { address });
+                    success = true;
+                } catch (e) {
+                    console.log(e);
+                    const ans = await question('Retry? (y/n) ') as any as string;
+                    if (ans == 'n') break;
+                }
+            }
         }
+    }
+}
+export async function checkJustOneBuildInfo() {
+    const dir = readdirSync('./artifacts/build-info');
+    if (dir.length > 1) {
+        console.error('There should be exactly one file under artifacts/build-info. Delete the artifacts folder and try again.');
+        process.exit(1);
     }
 }
 export async function checkNoProxyExists() {
@@ -36,17 +53,34 @@ export async function checkNoProxyExists() {
         }
     }
 }
-export async function getProxyAddress() {
+export async function getProxyAddresses() {
     if (network.name == 'localhost' || network.name == 'hardhat') {
-        return await question('Proxy address: ') as any as string;
+        const ans = await question('Proxy addresses (comma seperated): ') as any as string;
+        return ans.split(',').map((s: string) => s.trim())
     } else {
         const buf = readFileSync(`./.openzeppelin/${network.name}.json`, "utf8");
         const obj = JSON.parse(buf);
-        assert(obj.proxies.length == 1, "There should be only one proxy");
-        const proxyAddr = obj.proxies[0].address;
-        const ans = await question(`Is the proxy address ${proxyAddr}? (y/n) `) as any as string;
+        assert(obj.proxies.length == 2, "There should be exactly two proxies");
+        const proxyAddrs = obj.proxies.map(x => x.address);
+        const ans = await question(`Is the proxy address ${proxyAddrs}? (y/n) `) as any as string;
         if (ans != 'y') process.exit(1);
-        return proxyAddr;
+        return proxyAddrs;
+    }
+}
+
+export function gitPreDeployTest(ver: number) {
+    const tag = `v${ver}-${network.name}`
+    const tags = execSync('git tag -l', { encoding: 'utf-8' }).split('\n');
+    const branchName = execSync('git branch --show-current', { encoding: 'utf-8' }).trim();
+    if (tags.indexOf(tag) !== -1) {
+        const tags_to_delete = tags.filter(x => x.split('-')[1] == network.name )
+        console.error(`Tag ${tag} exists, delete branch ${network.name} & related tags and try again`) as any as string;
+        console.error(`Try: git tag -d ${tags_to_delete.join(' ')} && git branch -D ${network.name}`);
+        process.exit(1);
+    }
+    if (branchName != network.name) {
+        console.error(`Current branch is ${branchName}, try git checkout -B ${network.name}!`) as any as string;
+        process.exit(1);
     }
 }
 
@@ -60,8 +94,8 @@ export async function gitCommitReleaseInfo(name: string, ver: number) {
     if (network.name == 'mainnet' || network.name == 'goerli') {
         files.push(`.openzeppelin/${network.name}.json`)            // openzeppelin upgrade proxy & storage layout info
     }
-    const tag = `v${ver}-${network.name}`
     console.log(files);
+    const tag = `v${ver}-${network.name}`
     const ans = await question(`Commit the above files and tag as ${tag}? (y/n) `) as any as string;
 
     if (ans == 'y') {

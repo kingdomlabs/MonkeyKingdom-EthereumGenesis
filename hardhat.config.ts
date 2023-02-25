@@ -36,8 +36,12 @@ const config: HardhatUserConfig = {
     },
   },
   networks: {
+    mainnet: {
+      url: process.env.MAINNET_RPC,
+      accounts: process.env.MAINNET_DEPLOYER_PRIKEY !== undefined ? [process.env.MAINNET_DEPLOYER_PRIKEY] : []
+    },
     goerli: {
-      url: 'https://eth.monkeykingdom.io/v1/goerli',
+      url: process.env.GOERLI_RPC,
       accounts: process.env.DEPLOYER_PRIKEY !== undefined ? [process.env.DEPLOYER_PRIKEY] : []
     }
   },

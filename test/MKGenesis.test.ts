@@ -75,6 +75,35 @@ describe("MonkeyKingdomGenesis", () => {
 
   });
 
+  describe('pausable', () => {
+    it('not paused by default', async () => {
+      const { genesis } = await loadFixture(genesisFixture);
+      expect(await genesis.paused()).to.equal(false);
+    })
+    it('can be paused', async () => {
+      const { genesis } = await loadFixture(genesisFixture);
+
+      const tokenIds = [2, 4];
+      const sig = genMigrateSig(tokenIds, acc[0].address, solSig);
+      await genesis.migrate(tokenIds, sig, solSig)
+      await expect(
+        genesis.connect(acc[1]).pause()
+      ).to.be.revertedWith('Ownable: caller is not the owner');
+      await genesis.pause();
+      expect(await genesis.paused()).to.equal(true);
+      await expect(
+        genesis.transferFrom(acc[0].address, acc[1].address, 2)
+      ).to.be.revertedWith('Pausable: paused');
+
+      await expect(
+        genesis.connect(acc[1]).unpause()
+      ).to.be.revertedWith('Ownable: caller is not the owner');
+      await genesis.unpause();
+      await genesis.transferFrom(acc[0].address, acc[1].address, 2)
+      expect(await genesis.ownerOf(2)).to.equal(acc[1].address);
+    })
+  })
+
   describe("migration", () => {
     it('each token id can only be minted once', async () => {
       const { genesis } = await loadFixture(genesisFixture);
@@ -84,7 +113,7 @@ describe("MonkeyKingdomGenesis", () => {
       const sig2 = genMigrateSig(tokenIds, acc[1].address, solSig);
       await expect(
         genesis.connect(acc[1]).migrate(tokenIds, sig2, solSig)
-      ).to.revertedWith('ERC721: token already minted');
+      ).to.be.revertedWith('ERC721: token already minted');
     })
 
     it("invalid sig rejected", async () => {
