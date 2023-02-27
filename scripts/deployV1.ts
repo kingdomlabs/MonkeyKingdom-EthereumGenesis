@@ -22,8 +22,8 @@ const INIT = {
   }
 }
 if (network.name == 'mainnet') {
-  INIT.MK.MIGRATE_AUTH = process.env.MAINNET_AUTH_SIGNER_PUBKEY as string;
-  INIT.DB.MIGRATE_AUTH = process.env.MAINNET_AUTH_SIGNER_PUBKEY as string;
+  INIT.MK.MIGRATE_AUTH = process.env.MAINNET_MK_MIG_AUTH_PUBKEY as string;
+  INIT.DB.MIGRATE_AUTH = process.env.MAINNET_DB_MIG_AUTH_PUBKEY as string;
 }
 
 async function main() {
