@@ -57,10 +57,27 @@ describe("MonkeyKingdomGenesis", () => {
     });
     it('new fn available at same addr', async () => {
       const { genesis } = await loadFixture(genesisFixture);
-      const GenesisV2 = await ethers.getContractFactory("MKGenesisV2Test");
+      {
+        //pre-upgrade mints
+
+        const tokenIds = [10];
+        const sig = genMigrateSig(tokenIds, acc[0].address, solSig);
+        await genesis.migrate(tokenIds, sig, solSig);
+
+        expect(await genesis.balanceOf(acc[0].address)).to.equal(1);
+      }
+
+      const GenesisV2 = await ethers.getContractFactory("MKGenesisV2");
       const genesisV2 = await upgrades.upgradeProxy(genesis.address, GenesisV2) as MKGenesisV2;
       expect(genesis.address).to.equal(genesisV2.address);
-      expect(await genesisV2.v2Test()).to.equal('v2Test');
+
+      {
+        const tokenIds = [2, 4];
+        const sig = genMigrateSig(tokenIds, acc[0].address, solSig);
+        await genesisV2.migrate(tokenIds, sig, solSig)
+        expect(await genesis.balanceOf(acc[0].address)).to.equal(1 + 2);
+      }
+
     });
     it('old fn body replaced at same addr', async () => {
       const { genesis } = await loadFixture(genesisFixture);
@@ -110,6 +127,7 @@ describe("MonkeyKingdomGenesis", () => {
       const tokenIds = [2, 4];
       const sig = genMigrateSig(tokenIds, acc[0].address, solSig);
       genesis.migrate(tokenIds, sig, solSig)
+      expect(await genesis.balanceOf(acc[0].address)).to.equal(tokenIds.length);
       const sig2 = genMigrateSig(tokenIds, acc[1].address, solSig);
       await expect(
         genesis.connect(acc[1]).migrate(tokenIds, sig2, solSig)

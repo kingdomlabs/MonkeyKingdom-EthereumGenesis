@@ -28,13 +28,8 @@ import {CANONICAL_CORI_SUBSCRIPTION} from "operator-filter-registry/src/lib/Cons
 */
 
 contract MKGenesisV2 is MKGenesisV1, OperatorFiltererUpgradeable {
-    uint256 public test;
     function initializeV2() public virtual reinitializer(2) {
-        __OperatorFilterer_init(
-            CANONICAL_CORI_SUBSCRIPTION,
-            true
-        );
-        test=1;
+        __OperatorFilterer_init(CANONICAL_CORI_SUBSCRIPTION, true);
     }
 
     // OperatorFilter
