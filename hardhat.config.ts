@@ -31,19 +31,39 @@ const config: HardhatUserConfig = {
     settings: {
       optimizer: {
         enabled: true,
-        runs: 10000,
+        runs: 20000,
       },
     },
   },
   networks: {
+    hardhat: {
+      forking: {
+        url: "https://mainnet.infura.io/v3/552ae2cab36942ed9b5e61197df21f5e",
+        blockNumber: 18147706, // pin to a specific block, for cache!
+      },
+    },
+    localhost: {
+      url: "http://127.0.0.1:8545",
+      accounts: [
+        process.env.MAINNET_NEW_OWNER_PRIKEY!,
+        process.env.MAINNET_DEPLOYER_PRIKEY!,
+        process.env.D535_PRIKEY!,
+      ],
+    },
     mainnet: {
       url: process.env.MAINNET_RPC,
-      accounts: process.env.MAINNET_DEPLOYER_PRIKEY !== undefined ? [process.env.MAINNET_DEPLOYER_PRIKEY] : []
+      accounts: [
+        process.env.MAINNET_NEW_OWNER_PRIKEY!,
+        process.env.MAINNET_DEPLOYER_PRIKEY!,
+      ],
     },
     goerli: {
       url: process.env.GOERLI_RPC,
-      accounts: process.env.DEPLOYER_PRIKEY !== undefined ? [process.env.DEPLOYER_PRIKEY] : []
-    }
+      accounts:
+        process.env.DEPLOYER_PRIKEY !== undefined
+          ? [process.env.DEPLOYER_PRIKEY]
+          : [],
+    },
   },
   gasReporter: {
     enabled: process.env.REPORT_GAS !== undefined,
