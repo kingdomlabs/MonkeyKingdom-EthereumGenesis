@@ -1,4 +1,4 @@
-import { ethers, network, upgrades } from "hardhat";
+import { ethers, upgrades } from "hardhat";
 import {
   Address,
   closeReadline,

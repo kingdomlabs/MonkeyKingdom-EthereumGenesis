@@ -18,8 +18,8 @@ async function main() {
   const DB2 = await ethers.getContractFactory("MKGenesisV2");
   const db2 = DB2.attach(DBProxyAddr);
 
-  const tokenIds = _.range(1, 2221 + 1);
-  // const tokenIds = _.shuffle(_.range(1, 2221 + 1)).slice(0, 100);
+  // const tokenIds = _.range(1, 2221 + 1);
+  const tokenIds = _.shuffle(_.range(1, 2221 + 1)).slice(0, 100);
 
   for (const tokenId of tokenIds) {
     console.log(tokenId);

@@ -42,18 +42,21 @@ async function main() {
 
   let gas = 0;
   let gasPrice = [];
+  let txs = [];
   {
     const chunkSize = Math.ceil(DB_LOCKS.length / 4);
     const chunks = _.chunk(DB_LOCKS, chunkSize);
     console.log();
     console.log("First we set the locks...");
     for (let i = 0; i < chunks.length; i++) {
+      // if (i < 7) continue;
       console.log("chunk", i);
       try {
         const tx = await mk3.migrateDBLocks(chunks[i]);
-        const receipt = await tx.wait();
-        gas += receipt.gasUsed.toNumber();
-        console.log(receipt.status);
+        txs.push(tx);
+        // const receipt = await tx.wait();
+        // gas += receipt.gasUsed.toNumber();
+        // console.log(receipt.status);
       } catch (e) {
         console.error(`failed at ${i}`, e);
         return;
@@ -74,15 +77,17 @@ async function main() {
   const chunks = _.chunk(DB_OWNERS, chunkSize);
   // const all = [];
   for (let i = 0; i < chunks.length; i++) {
+    // if (i < 2) continue;
     console.log("chunk", i);
     const offset = 2223 + chunkSize * i;
     try {
       const tx = await mk3.migrateDB(chunks[i], offset);
+      txs.push(tx);
       // all.push(tx);
       console.log(`${offset}: ${tx.hash}`);
-      const receipt = await tx.wait();
-      gas += receipt.gasUsed.toNumber();
-      console.log(receipt.status);
+      // const receipt = await tx.wait();
+      // gas += receipt.gasUsed.toNumber();
+      // console.log(receipt.status);
     } catch (e) {
       console.error(`failed at ${offset}`, e);
       return;
@@ -90,7 +95,10 @@ async function main() {
     // console.log(`${offset}`);
   }
 
-  console.log("Total gas used: ", gas);
+  const receipts = await Promise.all(txs.map((x) => x.wait()));
+  console.log(receipts.map((x) => x.gasUsed.toString()));
+
+  // console.log("Total gas used: ", gas);
   // await Promise.all(all.map((x) => x.wait()));
 
   closeReadline();
