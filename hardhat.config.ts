@@ -39,7 +39,8 @@ const config: HardhatUserConfig = {
     hardhat: {
       forking: {
         url: "https://mainnet.infura.io/v3/552ae2cab36942ed9b5e61197df21f5e",
-        blockNumber: 18147706, // pin to a specific block, for cache!
+        // blockNumber: 18156160, // pin to a specific block, for cache!
+        blockNumber: 18155781, // before DB mig
       },
     },
     localhost: {
