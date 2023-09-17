@@ -2,7 +2,7 @@ import { ethers, upgrades } from "hardhat";
 import _ from "lodash";
 import DB_OWNERS from "../dat/db_v2_owners.json";
 import DB_LOCKS from "../dat/db_v2_lockedTokenIds.json";
-import { Address, closeReadline } from "./utils";
+import { Address, closeReadline, question } from "./utils";
 import { MKGenesisStakingV2, MKGenesisV3 } from "../typechain-types";
 
 // yarn hardhat run --network localhost scripts/hardforkV3.ts
@@ -13,10 +13,10 @@ async function main() {
   const MK3 = await ethers.getContractFactory("MKGenesisV3");
   const mk3 = MK3.attach(MKProxyAddr) as MKGenesisV3;
 
-  await upgrades.forceImport(
-    Address.StakingProxy,
-    await ethers.getContractFactory("MKGenesisStakingV1")
-  );
+  // await upgrades.forceImport(
+  //   Address.StakingProxy,
+  //   await ethers.getContractFactory("MKGenesisStakingV1")
+  // );
 
   const StakingV2 = await ethers.getContractFactory("MKGenesisStakingV2");
   const report = await upgrades.validateUpgrade(
@@ -30,12 +30,12 @@ async function main() {
     console.log("Upgrade validation passed");
   }
 
-  const stakingV2 = (await upgrades.upgradeProxy(
-    Address.StakingProxy,
-    StakingV2
-  )) as MKGenesisStakingV2;
-  await stakingV2.deployed();
-  console.log("Staking upgraded to V2:", stakingV2.address);
+  // const stakingV2 = (await upgrades.upgradeProxy(
+  //   Address.StakingProxy,
+  //   StakingV2
+  // )) as MKGenesisStakingV2;
+  // await stakingV2.deployed();
+  // console.log("Staking upgraded to V2:", stakingV2.address);
 
   console.log();
   console.log("Now the data migration");
@@ -49,7 +49,7 @@ async function main() {
     console.log();
     console.log("First we set the locks...");
     for (let i = 0; i < chunks.length; i++) {
-      // if (i < 7) continue;
+      if (i < 99) continue;
       console.log("chunk", i);
       try {
         const tx = await mk3.migrateDBLocks(chunks[i]);
@@ -68,6 +68,8 @@ async function main() {
     const lock = await mk3.locks(2224, 0);
     console.log({ lock });
   }
+
+  await question("continue?");
 
   console.log("Gas used: ", gas);
   console.log();
